@@ -6,8 +6,8 @@
 # Only tested on Linux systems with Python 2.7.x and Apache 2.2 and 2.4
 # Author Justin Duplessis <drfoliberg@gmail.com>
 
-__version__ = "0.1.0"
-
+__version__ = "0.1.1"
+apache_user = "www-data"
 
 def print_help():
     print "Usage " + args[0] + " user domain [enableMySql=true] [enablePhpMyAdmin=false] [Alias 1] [Alias 2] [Alias x]"
@@ -29,7 +29,8 @@ def generate_config():
     str += "SuexecUserGroup " + user + " " + user + "\n"
     str += "HostNameLookups off\n"
     str += "UseCanonicalName off\n"
-    str += "CustomLog " + base_path +"/logs/log common\n"
+    str += """LogFormat "%h %l %u %t \"%r\" %>s %b" common"""
+    str += "\nCustomLog " + base_path +"/logs/log common\n"
     if phpmyadmin_enabled:
         str += "Alias /phpmyadmin /var/www/phpmyadmin\n"
     str += "</VirtualHost>"
@@ -38,7 +39,7 @@ def generate_config():
 
 from genericpath import exists
 import os
-from os import mkdir, write
+from os import mkdir
 import pwd
 from tools import tools
 import sys
@@ -71,12 +72,12 @@ mysql_enabled = True
 if len(args) > 3:
     if args[3] == "false":
         mysql_enabled = False
-    elif tools.mysql_password == "CHANGE ME":
-        print "[Error] Please change the mysql information to connect to the database in /tools/tools.py !"
-        exit(1)
 
 if mysql_enabled:
     print "[Info] A MySql database and user will be generated."
+    if tools.mysql_password == "CHANGE ME":
+        print "[Error] Please change the mysql information to connect to the database in /tools/tools.py !"
+        exit(1)
 
 #arg 4 Enable an alias to PhpMyAdmin ?
 #default = True
@@ -140,6 +141,9 @@ os.system("scripts/createUserWebHost.bash " + user + " " + base_path + " " + pas
 user_uid = pwd.getpwnam(user).pw_uid
 user_gid = pwd.getpwnam(user).pw_gid
 
+#Get the uid of apache log user
+apache_uid = pwd.getpwnam(apache_user).pw_uid
+
 #Proceeding to create the root
 mkdir(base_path, 0755)
 
@@ -147,9 +151,9 @@ mkdir(base_path, 0755)
 mkdir(base_path+"/www", 0755)
 os.chown(base_path+"/www", user_uid, user_gid)
 
-#/logs only read access for the user
+#/logs only read access for the user and write for apache log user
 mkdir(base_path+"/logs", 0750)
-os.chown(base_path+"/logs", 0, user_gid,)
+os.chown(base_path+"/logs", apache_uid, user_gid,)
 
 #/backups only read access for the user
 mkdir(base_path+"/backups", 0750)
@@ -163,7 +167,7 @@ f.write(generate_config())
 os.system("a2ensite " + user)
 
 #restart apache server
-os.system("service apache2 restart")
+os.system("service apache2 reload")
 
 print "\n\n[Success] The virtual host seems to be completed !"
 print "Please connect to the SFTP server with these credentials: "
